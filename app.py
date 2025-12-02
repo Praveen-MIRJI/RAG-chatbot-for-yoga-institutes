@@ -5,7 +5,12 @@ from openai import OpenAI
 # ---------------------------
 # Page Configuration
 # ---------------------------
-st.set_page_config(page_title="Yoga Institute Assistant", page_icon="🧘", layout="centered")
+st.set_page_config(
+    page_title="Yoga Institute Assistant", 
+    page_icon="🧘", 
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # ---------------------------
 # Initialize Clients
@@ -221,43 +226,114 @@ def calculate_cost(usage_info):
     }
 
 # ---------------------------
-# Streamlit UI
+# Session Management Functions
 # ---------------------------
-st.title("🧘 Yoga Institute Assistant")
-st.markdown("Ask me anything about yoga classes, subscriptions, and schedules!")
+def create_new_session():
+    """Create a new chat session"""
+    import time
+    session_id = f"session_{int(time.time())}"
+    session_name = f"Chat {len(st.session_state.chat_sessions) + 1}"
+    return {
+        "id": session_id,
+        "name": session_name,
+        "messages": [],
+        "created_at": time.time(),
+        "total_tokens": 0,
+        "total_cost": 0.0
+    }
 
-# Initialize session state
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "total_cost" not in st.session_state:
-    st.session_state.total_cost = 0.0
-if "total_tokens" not in st.session_state:
-    st.session_state.total_tokens = 0
+def get_session_preview(messages):
+    """Get preview text for a session"""
+    if not messages:
+        return "New chat"
+    first_user_msg = next((msg["content"] for msg in messages if msg["role"] == "user"), "New chat")
+    return first_user_msg[:40] + "..." if len(first_user_msg) > 40 else first_user_msg
 
-# Sidebar for usage statistics and controls
+# ---------------------------
+# Initialize Session State
+# ---------------------------
+if "chat_sessions" not in st.session_state:
+    st.session_state.chat_sessions = [create_new_session()]
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = st.session_state.chat_sessions[0]["id"]
+if "show_stats" not in st.session_state:
+    st.session_state.show_stats = False
+
+# Get current session
+current_session = next(
+    (s for s in st.session_state.chat_sessions if s["id"] == st.session_state.current_session_id),
+    st.session_state.chat_sessions[0]
+)
+
+# ---------------------------
+# Sidebar - Chat Sessions
+# ---------------------------
 with st.sidebar:
-    st.header("📊 Usage Statistics")
-    st.metric("Total Tokens Used", f"{st.session_state.total_tokens:,}")
-    st.metric("Total Cost", f"${st.session_state.total_cost:.6f}")
-    st.caption("GPT-4o-mini pricing: $0.150/1M input tokens, $0.600/1M output tokens")
+    st.title("🧘 Yoga AI")
+    
+    # New Chat Button
+    if st.button("➕ New Chat", use_container_width=True, type="primary"):
+        new_session = create_new_session()
+        st.session_state.chat_sessions.insert(0, new_session)
+        st.session_state.current_session_id = new_session["id"]
+        st.rerun()
     
     st.divider()
     
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 New Chat"):
-            st.session_state.messages = []
-            st.rerun()
-    with col2:
-        if st.button("Reset Stats"):
-            st.session_state.total_cost = 0.0
-            st.session_state.total_tokens = 0
-            st.rerun()
+    # Chat Sessions List
+    st.subheader("💬 Chat History")
     
-    st.caption(f"💬 Messages: {len(st.session_state.messages)}")
+    for idx, session in enumerate(st.session_state.chat_sessions):
+        is_current = session["id"] == st.session_state.current_session_id
+        
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            button_type = "primary" if is_current else "secondary"
+            if st.button(
+                get_session_preview(session["messages"]),
+                key=f"session_{session['id']}",
+                use_container_width=True,
+                type=button_type if is_current else "secondary"
+            ):
+                st.session_state.current_session_id = session["id"]
+                st.rerun()
+        
+        with col2:
+            if len(st.session_state.chat_sessions) > 1:
+                if st.button("🗑️", key=f"delete_{session['id']}", help="Delete chat"):
+                    st.session_state.chat_sessions.pop(idx)
+                    if session["id"] == st.session_state.current_session_id:
+                        st.session_state.current_session_id = st.session_state.chat_sessions[0]["id"]
+                    st.rerun()
+    
+    st.divider()
+    
+    # Statistics Toggle
+    if st.button("📊 Statistics", use_container_width=True):
+        st.session_state.show_stats = not st.session_state.show_stats
+    
+    if st.session_state.show_stats:
+        st.metric("Session Tokens", f"{current_session['total_tokens']:,}")
+        st.metric("Session Cost", f"${current_session['total_cost']:.6f}")
+        
+        # Total across all sessions
+        total_tokens = sum(s['total_tokens'] for s in st.session_state.chat_sessions)
+        total_cost = sum(s['total_cost'] for s in st.session_state.chat_sessions)
+        
+        st.caption("**All Sessions:**")
+        st.caption(f"Tokens: {total_tokens:,}")
+        st.caption(f"Cost: ${total_cost:.6f}")
+        st.caption("GPT-4o-mini: $0.150/1M input, $0.600/1M output")
+
+# ---------------------------
+# Main Chat Interface
+# ---------------------------
+st.title("🧘 Yoga Institute Assistant")
+st.caption(f"💬 {get_session_preview(current_session['messages'])}")
 
 # Display chat history
-for message in st.session_state.messages:
+for message in current_session["messages"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         # Show usage info if available
@@ -271,28 +347,28 @@ for message in st.session_state.messages:
                     st.caption(f"Cost: ${message['cost']['total_cost']:.6f}")
 
 # Chat input
-if prompt := st.chat_input("What would you like to know?"):
+if prompt := st.chat_input("Ask me about yoga institutes..."):
     # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Add user message to current session
+    current_session["messages"].append({"role": "user", "content": prompt})
     
     # Get assistant response with full chat history
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             # Pass chat history (excluding the current message we just added)
-            response, usage_info = ask_rag(prompt, st.session_state.messages[:-1])
+            response, usage_info = ask_rag(prompt, current_session["messages"][:-1])
             st.markdown(response)
             
             # Display and store usage info
             if usage_info:
                 cost_info = calculate_cost(usage_info)
                 
-                # Update totals
-                st.session_state.total_tokens += usage_info["total_tokens"]
-                st.session_state.total_cost += cost_info["total_cost"]
+                # Update session totals
+                current_session["total_tokens"] += usage_info["total_tokens"]
+                current_session["total_cost"] += cost_info["total_cost"]
                 
                 with st.expander("📈 Token Usage"):
                     col1, col2, col3 = st.columns(3)
@@ -302,7 +378,7 @@ if prompt := st.chat_input("What would you like to know?"):
                     st.caption(f"Cost: ${cost_info['total_cost']:.6f}")
                 
                 # Add to chat history with usage info
-                st.session_state.messages.append({
+                current_session["messages"].append({
                     "role": "assistant", 
                     "content": response,
                     "usage": usage_info,
@@ -310,4 +386,4 @@ if prompt := st.chat_input("What would you like to know?"):
                 })
             else:
                 # Add to chat history without usage info
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                current_session["messages"].append({"role": "assistant", "content": response})
