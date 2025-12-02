@@ -73,31 +73,35 @@ def is_asking_for_institutes_list(query):
     return any(keyword in query_lower for keyword in keywords)
 
 def get_all_institutes():
-    """Retrieve all unique institutes from the database"""
+    """Retrieve all unique institutes with their locations from the database"""
     # Query with a generic embedding to get diverse results
     resp = client.embeddings.create(
         model="text-embedding-3-small",
-        input="yoga institute information"
+        input="list all certified yoga institutes with locations"
     )
     query_vector = resp.data[0].embedding
     
     results = qdrant.query_points(
         collection_name="Institutes",
         query=query_vector,
-        limit=50  # Get more results to find all institutes
+        limit=100  # Get more results to find all institutes
     )
     
-    institutes = set()
-    for r in results.points:
-        if "institute_name" in r.payload:
-            institutes.add(r.payload["institute_name"])
-        elif "content" in r.payload:
-            # Try to extract institute name from content
-            content = r.payload["content"]
-            if "Athayog" in content:
-                institutes.add("Athayog Living")
+    # Use dict to store unique institutes with their info
+    institutes_dict = {}
     
-    return sorted(list(institutes))
+    for r in results.points:
+        payload = r.payload
+        if "institute_name" in payload and payload["institute_name"] not in institutes_dict:
+            institutes_dict[payload["institute_name"]] = {
+                "name": payload["institute_name"],
+                "city": payload.get("city", "N/A"),
+                "state": payload.get("state", "N/A"),
+                "code": payload.get("code", "N/A"),
+                "website": payload.get("website", "N/A")
+            }
+    
+    return list(institutes_dict.values())
 
 def ask_rag(query, chat_history):
     usage_info = None
@@ -123,12 +127,17 @@ How may I assist you today?""", None
     if is_asking_for_institutes_list(query):
         institutes = get_all_institutes()
         if institutes:
-            institutes_list = "\n".join([f"- {inst}" for inst in institutes])
+            institutes_list = ""
+            for inst in institutes:
+                institutes_list += f"\n**{inst['name']}**\n"
+                institutes_list += f"  📍 Location: {inst['city']}, {inst['state']}\n"
+                institutes_list += f"  🔖 Code: {inst['code']}\n"
+                institutes_list += f"  🌐 Website: {inst['website']}\n"
+            
             return f"""Here are the certified and verified yoga institutes in our database:
-
 {institutes_list}
 
-These institutes are verified and offer professional yoga instruction. You can ask me specific questions about any of these institutes, such as their class schedules, subscription plans, locations, or special programs.
+These institutes are verified and offer professional yoga instruction. You can ask me specific questions about any of these institutes, such as their class schedules, subscription plans, or special programs.
 
 Which institute would you like to know more about?""", None
         else:
