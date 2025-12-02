@@ -228,11 +228,11 @@ def calculate_cost(usage_info):
 # ---------------------------
 # Session Management Functions
 # ---------------------------
-def create_new_session():
+def create_new_session(session_count=1):
     """Create a new chat session"""
     import time
     session_id = f"session_{int(time.time())}"
-    session_name = f"Chat {len(st.session_state.chat_sessions) + 1}"
+    session_name = f"Chat {session_count}"
     return {
         "id": session_id,
         "name": session_name,
@@ -253,7 +253,7 @@ def get_session_preview(messages):
 # Initialize Session State
 # ---------------------------
 if "chat_sessions" not in st.session_state:
-    st.session_state.chat_sessions = [create_new_session()]
+    st.session_state.chat_sessions = [create_new_session(1)]
 if "current_session_id" not in st.session_state:
     st.session_state.current_session_id = st.session_state.chat_sessions[0]["id"]
 if "show_stats" not in st.session_state:
@@ -273,7 +273,7 @@ with st.sidebar:
     
     # New Chat Button
     if st.button("➕ New Chat", use_container_width=True, type="primary"):
-        new_session = create_new_session()
+        new_session = create_new_session(len(st.session_state.chat_sessions) + 1)
         st.session_state.chat_sessions.insert(0, new_session)
         st.session_state.current_session_id = new_session["id"]
         st.rerun()
